@@ -7,7 +7,7 @@ aave-v3-usdc-yield/
   README.md                 # goal, quickstart, addresses, start block, APR→APY formula
   pyproject.toml            # or requirements.txt
   config/
-    default.toml            # chain_id, pool, usdc, start_block, rpc_url env key
+    default.toml            # chain_id, pool, usdc, start_block, ETH_ARCHIVE_RPC_URL env key
   src/aave_usdc_yield/
     __init__.py
     cli.py                  # yield at|backfill|materialize|follow|verify
@@ -22,7 +22,7 @@ aave-v3-usdc-yield/
     rates.py                # RAY → APR → APY (documented)
     verify.py               # sample archive getReserveData compare
   data/                     # gitignored: yield.sqlite, exports/
-  .env.example              # RPC_URL=  (real secrets stay out of git)
+  .env.example              # ETH_ARCHIVE_RPC_URL=  (real secrets stay out of git)
   tests/
     test_asof.py
     test_materialize.py
