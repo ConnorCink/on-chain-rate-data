@@ -1,0 +1,23 @@
+# Locked pins (Myshk Phase 1) — see docs/decisions.md
+chain_id = 1
+protocol = "aave_v3"
+
+# Aave V3 Core Pool (Ethereum) — confirmed vs bgd-labs/aave-address-book AaveV3Ethereum.POOL
+pool_address = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"
+
+# Native USDC on Ethereum mainnet
+usdc_address = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+
+# Empirically first USDC ReserveDataUpdated on this pool.
+# null until discovered via `yield discover-start` / first backfill with RPC.
+# Queries for blocks before start_block raise an explicit error.
+# start_block = 16291127  # example once discovered; leave unset to force discovery
+
+# RPC: read only from this env var (never commit secrets)
+rpc_env_key = "ETH_ARCHIVE_RPC_URL"
+
+# eth_getLogs chunk size (providers often cap range)
+log_chunk_size = 10000
+
+# SQLite path (relative to cwd or absolute)
+db_path = "data/yield.sqlite"
