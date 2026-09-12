@@ -199,9 +199,10 @@ Entrypoints: `yield` and `aave-usdc-yield`.
 ## 5. Layout
 
 ```text
+app.py                   # optional Streamlit UI (pip install -e ".[ui]")
 config/default.toml      # addresses, chunk size, db path
 config/smoke.toml        # optional tiny-chunk overlay
-src/aave_usdc_yield/     # cli, rpc, decode, store, asof, rates, realized, …
+src/aave_usdc_yield/     # cli, rpc, decode, store, asof, rates, realized, archive_query, …
 data/                    # gitignored sqlite + exports
 docs/decisions.md        # locked pins + formulas
 docs/runbook.md          # ops detail
@@ -240,6 +241,38 @@ yield realized --from TIP_MINUS_5000 --to TIP --json
 Replace `TIP` / `TIP_MINUS_5000` with concrete integers from your RPC (`eth_blockNumber`).
 
 ---
+
+
+---
+
+## 8. Streamlit UI (optional)
+
+Local explorer for point rate, realized principal, wealth curve, and analysis prompts. UI deps stay optional so a lean CLI install is unchanged.
+
+**Prerequisites**
+- Repo root checkout; Python ≥ 3.11 venv
+- Populated SQLite (`data/yield.sqlite` or another path) — or archive RPC for one-off `getReserveData` / date→block
+- Optional: `.env` with `ETH_ARCHIVE_RPC_URL` (never commit; app loads it quietly and never prints the value)
+
+```bash
+source .venv/bin/activate
+pip install -e ".[ui]"
+# optional RPC for date→block and archive fallback:
+set -a && source .env && set +a
+streamlit run app.py --server.address 0.0.0.0 --server.port 8501
+```
+
+**Expected URL:** [http://localhost:8501](http://localhost:8501) (or `http://<host>:8501` when bound to `0.0.0.0`).
+
+**Tabs**
+| Tab | Behavior |
+|-----|----------|
+| Point rate | Block or date → RAY / APR% / APY% / as-of event; DB first, optional archive `getReserveData` |
+| Realized / principal | From/to + principal → end value, earned, annualized realized % |
+| Wealth curve | Charts index path when DB has history; otherwise backfill instructions |
+| Inspiration | Short engineering prompts for cash-sleeve analysis |
+
+Entrypoint file: `app.py` (repo root). Helpers: `aave_usdc_yield.envload`, `aave_usdc_yield.archive_query`.
 
 ## License
 
