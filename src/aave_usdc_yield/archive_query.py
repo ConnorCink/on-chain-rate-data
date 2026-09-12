@@ -178,6 +178,139 @@ def query_supply_rate_at_datetime(
     }
 
 
+
+# In-process cache: historical archive samples never change.
+_RATE_CACHE: dict[tuple[str, str, int], dict[str, Any]] = {}
+_HISTORY_CACHE: dict[tuple[str, str, str, int], list[dict[str, Any]]] = {}
+
+
+def _cache_key_rate(pool: str, asset: str, block_number: int) -> tuple[str, str, int]:
+    return (pool.lower(), asset.lower(), int(block_number))
+
+
+def query_supply_rate_at_datetime_cached(
+    w3: Web3,
+    datetime_iso: str,
+    *,
+    pool_address: str,
+    asset: str,
+) -> dict[str, Any]:
+    """Like query_supply_rate_at_datetime but caches by resolved block number."""
+    target_ts = datetime_to_ts(datetime_iso)
+    block_number = block_at_or_before_timestamp(w3, target_ts)
+    key = _cache_key_rate(pool_address, asset, block_number)
+    cached = _RATE_CACHE.get(key)
+    if cached is not None:
+        out = dict(cached)
+        out["requested_datetime"] = datetime_iso
+        out["requested_timestamp"] = target_ts
+        out["cache_hit"] = True
+        return out
+    data = query_supply_rate_at_datetime(
+        w3,
+        datetime_iso,
+        pool_address=pool_address,
+        asset=asset,
+    )
+    store = {
+        k: data[k]
+        for k in (
+            "block_number",
+            "block_timestamp",
+            "block_timestamp_iso",
+            "supply_apr",
+            "supply_apy",
+            "liquidity_rate_ray",
+            "source",
+            "supply_apy_label",
+            "reserve",
+            "chain_id",
+            "protocol",
+        )
+        if k in data
+    }
+    _RATE_CACHE[key] = store
+    out = dict(data)
+    out["cache_hit"] = False
+    return out
+
+
+def query_supply_rate_history(
+    w3: Web3,
+    start_iso: str,
+    end_iso: str,
+    points: int,
+    *,
+    pool_address: str,
+    asset: str,
+) -> dict[str, Any]:
+    """Sample archive getReserveData evenly between start and end (inclusive).
+
+    Returns ``{points: [{timestamp, timestamp_iso, supply_apr, supply_apy, block_number}], ...}``.
+    Aggressive process cache: identical windows reuse results; per-block rates cached forever.
+    """
+    if points < 2:
+        raise ValueError("points must be >= 2")
+    if points > 120:
+        raise ValueError("points must be <= 120")
+    start_ts = datetime_to_ts(start_iso)
+    end_ts = datetime_to_ts(end_iso)
+    if end_ts < start_ts:
+        raise ValueError("end_iso must be >= start_iso")
+
+    hist_key = (
+        pool_address.lower(),
+        asset.lower(),
+        f"{start_ts}:{end_ts}",
+        int(points),
+    )
+    cached = _HISTORY_CACHE.get(hist_key)
+    if cached is not None:
+        return {
+            "start_iso": start_iso,
+            "end_iso": end_iso,
+            "points_requested": points,
+            "points": list(cached),
+            "cache_hit": True,
+            "source": "archive_getReserveData",
+        }
+
+    span = end_ts - start_ts
+    samples: list[dict[str, Any]] = []
+    for i in range(points):
+        if points == 1:
+            ts = end_ts
+        else:
+            ts = start_ts + int(round(span * i / (points - 1)))
+        iso = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+        row = query_supply_rate_at_datetime_cached(
+            w3,
+            iso,
+            pool_address=pool_address,
+            asset=asset,
+        )
+        samples.append(
+            {
+                "timestamp": row["block_timestamp"],
+                "timestamp_iso": row["block_timestamp_iso"],
+                "requested_timestamp": ts,
+                "supply_apr": row["supply_apr"],
+                "supply_apy": row["supply_apy"],
+                "block_number": row["block_number"],
+            }
+        )
+
+    _HISTORY_CACHE[hist_key] = samples
+    return {
+        "start_iso": start_iso,
+        "end_iso": end_iso,
+        "points_requested": points,
+        "points": samples,
+        "cache_hit": False,
+        "source": "archive_getReserveData",
+    }
+
+
 def connect_optional(rpc_url: str | None) -> Web3 | None:
     if not rpc_url:
         return None

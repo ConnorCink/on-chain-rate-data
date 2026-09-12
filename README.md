@@ -287,8 +287,9 @@ pip install -e ".[mcp]"
 
 | | |
 |--|--|
-| Tool | `get_aave_usdc_supply_rate(datetime_iso)` → block meta, APR/APY, RAY, `source=archive_getReserveData` |
-| Panel | `ui://aave-usdc-yield/panel` (MCP Apps) · standalone `mcp_app/index.html` |
+| Tool | `get_aave_usdc_supply_rate(datetime_iso)` — text + structuredContent; opens MCP App |
+| App-only | `get_rate_history(start_iso, end_iso, points)` — chart presets (zero model tokens) |
+| Panel | `ui://aave-usdc-yield/mcp-app.html` — rebuild with `python mcp_app/build_panel.py` |
 | Config | Absolute venv python + `-m aave_usdc_yield.mcp_server` + `env.ETH_ARCHIVE_RPC_URL` |
 
 RPC URL is loaded via `envload` / Claude `env` and is never printed.
