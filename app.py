@@ -96,6 +96,11 @@ def _sidebar_status(cfg, store: RateStore) -> dict[str, Any]:
         f"- **RPC env:** `{'set' if rpc_configured(cfg.rpc_env_key) else 'missing'}` "
         f"(`{cfg.rpc_env_key}` — value never shown)"
     )
+    st.sidebar.caption(
+        "Indexed coverage only — not a verified since-inception claim. "
+        "Confirm meta.start_block ≈ first USDC ReserveDataUpdated near pool activation "
+        "before all-time narratives."
+    )
     if n == 0:
         st.sidebar.warning("DB empty. Run `yield backfill` or point at a populated SQLite.")
     return {"store": store, "db_path": db_path, "n": n, "min": mn, "max": mx, "start": start}
@@ -186,9 +191,13 @@ def tab_point_rate(cfg, store: RateStore, w3) -> None:
     st.success(f"Resolved block **{n}** · source=`{src}`")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("RAY (liquidityRate)", f"{result['liquidity_rate_ray']}")
-    c2.metric("APR", _fmt_pct(result["supply_apr"]))
-    c3.metric("APY", _fmt_pct(result["supply_apy"]))
+    c2.metric("Supply APR", _fmt_pct(result["supply_apr"]))
+    c3.metric("Supply APY", _fmt_pct(result["supply_apy"]))
     c4.metric("As-of event block", str(result.get("as_of_event_block") or "—"))
+    st.caption(
+        f"Supply-side liquidityRate only (not borrow). "
+        f"APY label=`{result.get('supply_apy_label') or 'continuous_compound_from_apr_aave_utilities'}`."
+    )
     st.json(
         {
             "block_number": result["block_number"],
@@ -307,6 +316,11 @@ def tab_realized(cfg, store: RateStore, w3) -> None:
     c2.metric("Earned", f"{earned:,.6f} USDC")
     c3.metric("Cumulative", _fmt_pct(result["cumulative_return"]))
     c4.metric("Annualized realized", _fmt_pct(result.get("annualized_realized")))
+    st.caption(
+        f"Passive supply via liquidityIndex (not borrow). "
+        f"Annualized label=`{result.get('annualized_label') or 'compound_from_index_ratio'}` · "
+        f"source=`{result.get('source')}`."
+    )
     st.json(result)
 
 
