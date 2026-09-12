@@ -87,7 +87,7 @@ def load_config(path: Path | str | None = None) -> AppConfig:
         usdc_address=usdc,
         start_block=start_block,
         rpc_env_key=str(raw.get("rpc_env_key", "ETH_ARCHIVE_RPC_URL")),
-        log_chunk_size=int(raw.get("log_chunk_size", 50)),
+        log_chunk_size=int(raw.get("log_chunk_size", 10)),
         db_path=db,
         config_path=cfg_path.resolve(),
     )

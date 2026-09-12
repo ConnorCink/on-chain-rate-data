@@ -21,7 +21,7 @@ set -a; source .env; set +a        # export ETH_ARCHIVE_RPC_URL without printing
 yield discover-start
 
 # 2) Backfill USDC ReserveDataUpdated → data/yield.sqlite
-# Default chunk=50; auto-shrinks on RPC 400s; resume-safe
+# Default chunk=10; auto-shrinks on RPC 400s; resume-safe
 yield backfill
 # optional: yield backfill --from-block N --to-block M
 # tiny chunks for stubborn providers:

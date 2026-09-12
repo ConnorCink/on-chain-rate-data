@@ -14,15 +14,30 @@ from .decode import RESERVE_DATA_UPDATED_TOPIC, reserve_topic
 ABI_PATH = Path(__file__).parent / "abi" / "pool.json"
 
 # Providers often reject large eth_getLogs ranges with HTTP 400 / -32005 / etc.
-DEFAULT_LOG_CHUNK = 50
+# Keep default tiny (10–50); auto-shrink handles stricter caps.
+DEFAULT_LOG_CHUNK = 10
 MIN_LOG_CHUNK = 1
 
 
 def make_web3(rpc_url: str) -> Web3:
+    """Build a Web3 client. Never log or raise the raw URL (may contain API keys)."""
     w3 = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout": 120}))
-    if not w3.is_connected():
-        raise RuntimeError(f"Cannot connect to RPC at {rpc_url!r}")
-    return w3
+    # is_connected() is flaky on some providers; retry, then soft-fail to a tip probe.
+    for _ in range(3):
+        try:
+            if w3.is_connected():
+                return w3
+        except Exception:
+            pass
+        time.sleep(0.25)
+    try:
+        _ = w3.eth.block_number
+        return w3
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            "Cannot connect to Ethereum RPC (ETH_ARCHIVE_RPC_URL). "
+            "Check the endpoint without printing secrets."
+        ) from None
 
 
 def load_pool_abi() -> list[dict[str, Any]]:
@@ -35,7 +50,6 @@ def _error_text(exc: BaseException) -> str:
     cause = getattr(exc, "__cause__", None) or getattr(exc, "__context__", None)
     if cause is not None:
         parts.append(str(cause))
-    # web3 sometimes nests provider response
     args = getattr(exc, "args", ())
     for a in args:
         parts.append(str(a))
@@ -64,6 +78,7 @@ def is_retriable_log_range_error(exc: BaseException) -> bool:
         "try again",
         "pruned",
         "history",
+        "bad request",
     )
     return any(n in text for n in needles)
 
@@ -80,11 +95,12 @@ def iter_reserve_data_updated_logs(
     progress: Callable[[str], None] | None = None,
     max_retries_per_chunk: int = 8,
 ) -> Iterator[tuple[int, list[dict[str, Any]]]]:
-    """Yield chunks of raw logs for USDC ReserveDataUpdated on the Pool.
+    """Yield (chunk_end_block, logs) for USDC ReserveDataUpdated on the Pool.
 
     Resilient: on RPC range/size/400-class errors, shrink chunk (halve, floor
-    at min_chunk_size) and retry the same start block. Resume-safe callers
-    should persist after each successful chunk.
+    at min_chunk_size) and retry the same start block. After failures, preferred
+    size is capped so we do not thrash by re-growing into a known-bad range.
+    Resume-safe callers should persist after each successful chunk.
     """
     pool = Web3.to_checksum_address(pool_address)
     topics = [
@@ -94,8 +110,8 @@ def iter_reserve_data_updated_logs(
     tip = to_block
     start = from_block
     current = max(min_chunk_size, int(chunk_size))
-    # Remember the configured preferred size so we can gently grow after success
     preferred = current
+    successes_at_size = 0
 
     def log(msg: str) -> None:
         if progress:
@@ -118,19 +134,19 @@ def iter_reserve_data_updated_logs(
                 normalized: list[dict[str, Any]] = [
                     _normalize_log(log) for log in logs
                 ]
-                # Yield (chunk_end_block, logs) so callers can checkpoint empty ranges
                 yield end, normalized
                 start = end + 1
-                # Mild growth toward preferred after success
-                if current < preferred:
-                    current = min(preferred, max(current + 1, current * 2))
+                successes_at_size += 1
+                # Grow by +1 only after several successes (tight RPC providers)
+                if current < preferred and successes_at_size >= 3:
+                    current += 1
+                    successes_at_size = 0
                 break
             except Exception as exc:  # noqa: BLE001 — provider errors vary widely
-                if (
-                    current > min_chunk_size
-                    and is_retriable_log_range_error(exc)
-                ):
+                if current > min_chunk_size and is_retriable_log_range_error(exc):
                     new_size = max(min_chunk_size, current // 2)
+                    preferred = min(preferred, max(min_chunk_size, current - 1))
+                    successes_at_size = 0
                     log(
                         f"  RPC error on blocks {start}-{end} "
                         f"(chunk={current}); shrinking to {new_size} and retrying"
@@ -178,7 +194,7 @@ def discover_first_usdc_update_block(
     usdc_address: str,
     search_from: int,
     search_to: int | None = None,
-    chunk_size: int = 50,
+    chunk_size: int = 10,
     progress: Callable[[str], None] | None = None,
 ) -> int | None:
     """Scan forward from search_from for the first USDC ReserveDataUpdated block.

@@ -17,7 +17,7 @@ Shelved: Morpho, multi-market.
 | APR→APY | RAY as APR: `APR = ray / 1e27`. `APY = (1 + APR/SECONDS_PER_YEAR)^SECONDS_PER_YEAR - 1` with `SECONDS_PER_YEAR=31536000` (Aave-utilities continuous). Always return RAY + APR; APY derived and labeled `continuous_compound_from_apr_aave_utilities` | Locked in `rates.py` |
 | As-of | Latest update with `block_number <= N`; dense expand holds rate until next update | Locked in `asof.py` / `materialize.py` |
 | Realized | `wealth = liquidityIndex(to) / liquidityIndex(from)` (RAY cancels). `cumulative_return = wealth - 1`. `annualized = wealth^(SECONDS_PER_YEAR/elapsed_s) - 1` preferring `block_timestamp`, else ~12s/block. Labeled `compound_from_index_ratio` | Locked in `realized.py` |
-| Log chunks | Default `log_chunk_size=50` (config). On RPC 400 / range-limit class errors, iterator halves chunk down to 1 and retries. Resume via `meta.last_scanned_to_block` + max event block | Locked in `rpc.py` / `backfill.py` |
+| Log chunks | Default `log_chunk_size=10` (config). On RPC 400 / range-limit class errors, iterator halves chunk down to 1 and retries. Resume via `meta.last_scanned_to_block` + max event block | Locked in `rpc.py` / `backfill.py` |
 
 ## Event signature
 `ReserveDataUpdated(address indexed reserve, uint256 liquidityRate, uint256 stableBorrowRate, uint256 variableBorrowRate, uint256 liquidityIndex, uint256 variableBorrowIndex)`  
