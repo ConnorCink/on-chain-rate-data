@@ -17,11 +17,13 @@ dependencies = [
 
 [project.optional-dependencies]
 ui = ["streamlit>=1.28.0"]
-dev = ["pytest>=7.0.0", "streamlit>=1.28.0"]
+mcp = ["mcp>=1.0.0"]
+dev = ["pytest>=7.0.0", "streamlit>=1.28.0", "mcp>=1.0.0"]
 
 [project.scripts]
 yield = "aave_usdc_yield.cli:main"
 aave-usdc-yield = "aave_usdc_yield.cli:main"
+aave-usdc-yield-mcp = "aave_usdc_yield.mcp_server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

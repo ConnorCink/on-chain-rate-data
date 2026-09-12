@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Aave V3 USDC Supply Yield</title>
+  <style>
+    :root {
+      --ink: #0f1a14;
+      --ink-soft: rgba(15, 26, 20, 0.72);
+      --ink-muted: rgba(15, 26, 20, 0.52);
+      --glass: rgba(255, 252, 245, 0.58);
+      --glass-edge: rgba(255, 255, 255, 0.72);
+      --gold: #e8b84a;
+      --gold-deep: #c9922a;
+      --accent: #1f6b4a;
+      --shadow: 0 24px 64px rgba(12, 28, 18, 0.28);
+      --radius: 28px;
+      --font: "SF Pro Display", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont,
+        "Helvetica Neue", sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      font-family: var(--font);
+      color: var(--ink);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 28px 18px;
+      background-color: #3d7a52;
+      /* Overlay + optional plate image + premium gold-sun / green-hill fallback */
+      background-image:
+        linear-gradient(165deg, rgba(255, 236, 190, 0.18) 0%, rgba(20, 50, 30, 0.22) 55%, rgba(12, 32, 20, 0.35) 100%),
+        var(--bg-image, none),
+        radial-gradient(ellipse 70% 50% at 72% 16%, rgba(255, 214, 100, 0.85), transparent 55%),
+        linear-gradient(180deg, #8ec5ff 0%, #c5dfa8 36%, #4f9a62 68%, #2a5c3c 100%);
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      background-attachment: fixed;
+    }
+
+    .stage {
+      width: min(420px, 100%);
+    }
+
+    .card {
+      position: relative;
+      border-radius: var(--radius);
+      padding: 28px 28px 24px;
+      background: var(--glass);
+      backdrop-filter: blur(22px) saturate(1.35);
+      -webkit-backdrop-filter: blur(22px) saturate(1.35);
+      border: 1px solid var(--glass-edge);
+      box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.65);
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.45) 0%, transparent 42%, rgba(232, 184, 74, 0.08) 100%);
+      pointer-events: none;
+    }
+
+    .inner { position: relative; z-index: 1; }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 22px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      font-weight: 650;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: rgba(255, 255, 255, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.7);
+      border-radius: 999px;
+      padding: 6px 12px;
+    }
+
+    .badge .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--gold);
+      box-shadow: 0 0 0 3px rgba(232, 184, 74, 0.28);
+    }
+
+    .source {
+      font-size: 11px;
+      color: var(--ink-muted);
+      font-family: var(--mono);
+      letter-spacing: 0.02em;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      color: var(--ink-soft);
+    }
+
+    .hero {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin: 4px 0 6px;
+    }
+
+    .apy {
+      font-size: clamp(48px, 12vw, 64px);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1;
+      background: linear-gradient(180deg, #1a3d2a 0%, #0f1a14 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
+    }
+
+    .apy-unit {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--ink-soft);
+      padding-bottom: 6px;
+    }
+
+    .apr-row {
+      font-size: 14px;
+      color: var(--ink-soft);
+      margin-bottom: 22px;
+    }
+
+    .apr-row strong {
+      font-weight: 650;
+      color: var(--ink);
+    }
+
+    .meta {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      padding-top: 18px;
+      border-top: 1px solid rgba(15, 26, 20, 0.1);
+    }
+
+    .meta dl {
+      margin: 0;
+    }
+
+    .meta dt {
+      font-size: 10px;
+      font-weight: 650;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--ink-muted);
+      margin-bottom: 4px;
+    }
+
+    .meta dd {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 550;
+      font-family: var(--mono);
+      color: var(--ink);
+      word-break: break-all;
+    }
+
+    .foot {
+      margin-top: 18px;
+      font-size: 11px;
+      line-height: 1.45;
+      color: var(--ink-muted);
+    }
+
+    @media (max-width: 380px) {
+      .card { padding: 22px 18px 18px; border-radius: 22px; }
+      .meta { grid-template-columns: 1fr; }
+      .apy { font-size: 44px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <article class="card" aria-label="Aave USDC supply yield panel">
+      <div class="inner">
+        <div class="eyebrow">
+          <span class="badge"><span class="dot" aria-hidden="true"></span> Aave V3 · ETH USDC</span>
+          <span class="source" id="source">archive_getReserveData</span>
+        </div>
+        <h1>Supply yield</h1>
+        <div class="hero">
+          <span class="apy" id="apy">—</span>
+          <span class="apy-unit">APY</span>
+        </div>
+        <div class="apr-row">APR <strong id="apr">—</strong></div>
+        <div class="meta">
+          <dl>
+            <dt>Block</dt>
+            <dd id="block">—</dd>
+          </dl>
+          <dl>
+            <dt>Block time (UTC)</dt>
+            <dd id="time">—</dd>
+          </dl>
+        </div>
+        <p class="foot">
+          Instantaneous supply rate from Pool.getReserveData. APY uses Aave-utilities
+          continuous compounding. Open via Claude Desktop MCP or standalone.
+        </p>
+      </div>
+    </article>
+  </div>
+  <script>
+    (function () {
+      // Standalone relative asset; MCP server may rewrite to data-URI.
+      var bg = "assets/hill-sun-bg.png";
+      document.body.style.setProperty("--bg-image", 'url("' + bg + '")');
+
+      function pct(x) {
+        if (x == null || Number.isNaN(Number(x))) return "—";
+        return (Number(x) * 100).toFixed(2) + "%";
+      }
+
+      function apply(data) {
+        if (!data) return;
+        document.getElementById("apy").textContent = pct(data.supply_apy).replace("%", "");
+        document.querySelector(".apy-unit").textContent = "% APY";
+        document.getElementById("apr").textContent = pct(data.supply_apr);
+        document.getElementById("block").textContent =
+          data.block_number != null ? String(data.block_number) : "—";
+        document.getElementById("time").textContent =
+          data.block_timestamp_iso ||
+          (data.block_timestamp != null
+            ? new Date(Number(data.block_timestamp) * 1000).toISOString().replace(".000", "")
+            : "—");
+        if (data.source) document.getElementById("source").textContent = data.source;
+      }
+
+      // Demo / fallback numbers when opened standalone without tool payload.
+      var demo = {
+        supply_apy: 0.0428,
+        supply_apr: 0.0419,
+        block_number: 21000000,
+        block_timestamp_iso: "2024-10-15T14:22:11Z",
+        source: "archive_getReserveData"
+      };
+
+      // MCP Apps hosts may post tool results; listen if available.
+      window.addEventListener("message", function (ev) {
+        try {
+          var msg = typeof ev.data === "string" ? JSON.parse(ev.data) : ev.data;
+          if (msg && (msg.supply_apy != null || (msg.result && msg.result.supply_apy != null))) {
+            apply(msg.result || msg);
+          }
+        } catch (e) { /* ignore */ }
+      });
+
+      var params = new URLSearchParams(location.search);
+      if (params.get("apy") || params.get("demo") === "0") {
+        apply({
+          supply_apy: params.get("apy") != null ? Number(params.get("apy")) : demo.supply_apy,
+          supply_apr: params.get("apr") != null ? Number(params.get("apr")) : demo.supply_apr,
+          block_number: params.get("block") || demo.block_number,
+          block_timestamp_iso: params.get("time") || demo.block_timestamp_iso,
+          source: params.get("source") || demo.source
+        });
+      } else {
+        apply(demo);
+      }
+    })();
+  </script>
+</body>
+</html>

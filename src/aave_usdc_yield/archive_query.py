@@ -1,4 +1,4 @@
-"""Optional archive RPC helpers: date→block binary search + getReserveData eth_call.
+"""Optional archive RPC helpers: date/datetime→block binary search + getReserveData eth_call.
 
 Used when the event-index DB lacks coverage. Never log RPC URLs.
 """
@@ -17,6 +17,32 @@ from .rpc import load_pool_abi, make_web3
 def date_to_utc_midnight_ts(d: date) -> int:
     """UTC midnight for a calendar date (UI date pickers are date-only)."""
     return int(datetime(d.year, d.month, d.day, tzinfo=timezone.utc).timestamp())
+
+
+def datetime_to_ts(value: datetime | str) -> int:
+    """Parse ISO datetime (optional tz; default UTC) to unix seconds.
+
+    Accepts ``datetime`` or ISO-8601 strings (``Z`` or offset). Naive values
+    are treated as UTC.
+    """
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        s = str(value).strip()
+        if not s:
+            raise ValueError("datetime string must be non-empty")
+        if s.endswith("Z") or s.endswith("z"):
+            s = s[:-1] + "+00:00"
+        try:
+            dt = datetime.fromisoformat(s)
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid ISO datetime {value!r}; expected e.g. "
+                "2024-06-15T12:30:00Z or 2024-06-15T12:30:00+00:00"
+            ) from exc
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.astimezone(timezone.utc).timestamp())
 
 
 def block_at_or_before_timestamp(w3: Web3, target_ts: int) -> int:
@@ -49,21 +75,30 @@ def resolve_block(
     *,
     block_number: int | None = None,
     as_of_date: date | None = None,
+    as_of_datetime: datetime | str | None = None,
 ) -> int:
-    """Resolve UI input to a block. Date path requires w3."""
-    if block_number is not None and as_of_date is not None:
-        raise ValueError("Provide block_number OR as_of_date, not both")
+    """Resolve UI/MCP input to a block. Date/datetime paths require w3."""
+    provided = sum(
+        x is not None for x in (block_number, as_of_date, as_of_datetime)
+    )
+    if provided > 1:
+        raise ValueError(
+            "Provide only one of block_number, as_of_date, or as_of_datetime"
+        )
     if block_number is not None:
         if block_number < 0:
             raise ValueError("block_number must be >= 0")
         return int(block_number)
-    if as_of_date is None:
-        raise ValueError("Need block_number or as_of_date")
+    if as_of_date is None and as_of_datetime is None:
+        raise ValueError("Need block_number, as_of_date, or as_of_datetime")
     if w3 is None:
         raise RuntimeError(
-            "Date→block requires ETH_ARCHIVE_RPC_URL (archive RPC). "
+            "Date/datetime→block requires ETH_ARCHIVE_RPC_URL (archive RPC). "
             "Enter a block number instead, or set the env var."
         )
+    if as_of_datetime is not None:
+        return block_at_or_before_timestamp(w3, datetime_to_ts(as_of_datetime))
+    assert as_of_date is not None
     return block_at_or_before_timestamp(w3, date_to_utc_midnight_ts(as_of_date))
 
 
@@ -100,6 +135,46 @@ def fetch_reserve_data(
         "reserve": token,
         "chain_id": int(w3.eth.chain_id),
         "protocol": "aave_v3",
+    }
+
+
+def query_supply_rate_at_datetime(
+    w3: Web3,
+    datetime_iso: str,
+    *,
+    pool_address: str,
+    asset: str,
+) -> dict[str, Any]:
+    """Resolve datetime → latest block ≤ instant, then archive getReserveData.
+
+    Returns the MCP/demo payload fields (block meta + APR/APY + RAY + source).
+    """
+    target_ts = datetime_to_ts(datetime_iso)
+    block_number = block_at_or_before_timestamp(w3, target_ts)
+    data = fetch_reserve_data(
+        w3,
+        pool_address=pool_address,
+        asset=asset,
+        block_number=block_number,
+    )
+    block_ts = int(w3.eth.get_block(block_number)["timestamp"])
+    data["block_timestamp"] = block_ts
+    return {
+        "block_number": data["block_number"],
+        "block_timestamp": block_ts,
+        "block_timestamp_iso": datetime.fromtimestamp(
+            block_ts, tz=timezone.utc
+        ).isoformat().replace("+00:00", "Z"),
+        "requested_datetime": datetime_iso,
+        "requested_timestamp": target_ts,
+        "supply_apr": data["supply_apr"],
+        "supply_apy": data["supply_apy"],
+        "liquidity_rate_ray": data["liquidity_rate_ray"],
+        "source": data["source"],
+        "supply_apy_label": data["supply_apy_label"],
+        "reserve": data["reserve"],
+        "chain_id": data["chain_id"],
+        "protocol": data["protocol"],
     }
 
 

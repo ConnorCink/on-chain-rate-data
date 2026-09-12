@@ -274,6 +274,25 @@ streamlit run app.py --server.address 0.0.0.0 --server.port 8501
 
 Entrypoint file: `app.py` (repo root). Helpers: `aave_usdc_yield.envload`, `aave_usdc_yield.archive_query`.
 
+## 9. Claude Desktop MCP (optional)
+
+Stdio MCP server for point-in-time Aave V3 ETH USDC supply rates via archive `getReserveData`, plus an HTML MCP App panel.
+
+```bash
+source .venv/bin/activate
+pip install -e ".[mcp]"
+# Claude Desktop: see docs/claude-desktop.md for claude_desktop_config.json
+# Entry: python -m aave_usdc_yield.mcp_server   OR   aave-usdc-yield-mcp
+```
+
+| | |
+|--|--|
+| Tool | `get_aave_usdc_supply_rate(datetime_iso)` → block meta, APR/APY, RAY, `source=archive_getReserveData` |
+| Panel | `ui://aave-usdc-yield/panel` (MCP Apps) · standalone `mcp_app/index.html` |
+| Config | Absolute venv python + `-m aave_usdc_yield.mcp_server` + `env.ETH_ARCHIVE_RPC_URL` |
+
+RPC URL is loaded via `envload` / Claude `env` and is never printed.
+
 ## License
 
 MIT — see `LICENSE`.
