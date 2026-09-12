@@ -1,17 +1,20 @@
-"""CLI: yield at|backfill|materialize|follow|verify|discover-start"""
+"""CLI: yield at|backfill|materialize|realized|wealth-curve|compare-sofr|follow|verify|discover-start"""
 
 from __future__ import annotations
 
+import csv
 import json
 import sys
 from pathlib import Path
 
 import click
 
-from .asof import BeforeStartBlockError, NoRateDataError, yield_at
+from .asof import BeforeStartBlockError, NoRateDataError, resolve_start_block, yield_at
 from .backfill import AAVE_V3_ETH_SEARCH_FLOOR, backfill
+from .benchmark import compare_realized_to_benchmark, load_benchmark_csv
 from .config import load_config
 from .materialize import materialize_range
+from .realized import RealizedYieldError, iter_wealth_curve_csv_rows, realized_between, wealth_curve
 from .rpc import discover_first_usdc_update_block, make_web3
 from .store import RateStore
 
@@ -23,7 +26,7 @@ def _cfg(config: str | None):
 @click.group()
 @click.version_option(package_name="aave-usdc-yield")
 def main() -> None:
-    """Aave V3 Ethereum USDC instantaneous supply yield (event-indexed)."""
+    """Aave V3 Ethereum USDC supply yield (instantaneous + realized via liquidityIndex)."""
 
 
 @main.command("at")
@@ -64,7 +67,7 @@ def cmd_backfill(
     from_block: int | None,
     to_block: int | None,
 ) -> None:
-    """Backfill USDC ReserveDataUpdated logs → SQLite rate_updates."""
+    """Backfill USDC ReserveDataUpdated logs → SQLite rate_updates (resume-safe)."""
     cfg = _cfg(config_path)
     store = RateStore(db_path or cfg.db_path)
     try:
@@ -98,7 +101,8 @@ def cmd_discover_start(
         pool_address=cfg.pool_address,
         usdc_address=cfg.usdc_address,
         search_from=from_block,
-        chunk_size=max(cfg.log_chunk_size, 20_000),
+        chunk_size=cfg.log_chunk_size,
+        progress=lambda m: click.echo(m, err=True),
     )
     if found is None:
         click.echo("error: no USDC ReserveDataUpdated found", err=True)
@@ -143,6 +147,154 @@ def cmd_materialize(
             click.echo(json.dumps(rows[0]))
             if len(rows) > 1:
                 click.echo(json.dumps(rows[-1]))
+
+
+@main.command("realized")
+@click.option("--from", "from_block", default=None, type=int, help="Deposit block (default: start_block)")
+@click.option("--to", "to_block", default=None, type=int, help="As-of block (default: latest stored)")
+@click.option("--config", "config_path", default=None, type=click.Path(exists=True))
+@click.option("--db", "db_path", default=None, type=click.Path())
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON")
+def cmd_realized(
+    from_block: int | None,
+    to_block: int | None,
+    config_path: str | None,
+    db_path: str | None,
+    as_json: bool,
+) -> None:
+    """Realized return from liquidityIndex: $1 left in → $X (index ratio)."""
+    cfg = _cfg(config_path)
+    store = RateStore(db_path or cfg.db_path)
+    updates = store.all_updates_ordered(chain_id=cfg.chain_id, reserve=cfg.usdc_address)
+    if not updates:
+        click.echo("error: no rate_updates; run `yield backfill` first", err=True)
+        sys.exit(2)
+
+    start = resolve_start_block(cfg, store)
+    if from_block is None:
+        from_block = start if start is not None else int(updates[0]["block_number"])
+    if to_block is None:
+        to_block = int(updates[-1]["block_number"])
+
+    try:
+        result = realized_between(updates, from_block=from_block, to_block=to_block)
+    except RealizedYieldError as e:
+        click.echo(f"error: {e}", err=True)
+        sys.exit(2)
+
+    if as_json:
+        click.echo(json.dumps(result, indent=2))
+    else:
+        click.echo(f"from_block:            {result['from_block']}")
+        click.echo(f"to_block:              {result['to_block']}")
+        click.echo(f"liquidity_index_from:  {result['liquidity_index_from']}")
+        click.echo(f"liquidity_index_to:    {result['liquidity_index_to']}")
+        click.echo(f"index_ratio:           {result['index_ratio']:.12f}")
+        click.echo(f"wealth_of_1:           {result['wealth_of_1']:.12f}")
+        click.echo(f"cumulative_return:     {result['cumulative_return']:.10%}")
+        if result["annualized_realized"] is not None:
+            click.echo(
+                f"annualized_realized:   {result['annualized_realized']:.10%}  "
+                f"({result['annualized_label']})"
+            )
+        else:
+            click.echo("annualized_realized:   n/a (need elapsed time)")
+        click.echo(f"source:                {result['source']}")
+
+
+@main.command("wealth-curve")
+@click.option("--from", "from_block", default=None, type=int, help="Start block (default: start_block)")
+@click.option("--to", "to_block", default=None, type=int, help="End block (default: latest)")
+@click.option("--out", "out_path", required=True, type=click.Path(), help="CSV output path")
+@click.option("--config", "config_path", default=None, type=click.Path(exists=True))
+@click.option("--db", "db_path", default=None, type=click.Path())
+def cmd_wealth_curve(
+    from_block: int | None,
+    to_block: int | None,
+    out_path: str,
+    config_path: str | None,
+    db_path: str | None,
+) -> None:
+    """Export sparse wealth curve CSV for $1 since start (or --from)."""
+    cfg = _cfg(config_path)
+    store = RateStore(db_path or cfg.db_path)
+    updates = store.all_updates_ordered(chain_id=cfg.chain_id, reserve=cfg.usdc_address)
+    if not updates:
+        click.echo("error: no rate_updates; run `yield backfill` first", err=True)
+        sys.exit(2)
+
+    start = resolve_start_block(cfg, store)
+    if from_block is None:
+        from_block = start if start is not None else int(updates[0]["block_number"])
+
+    points = wealth_curve(updates, from_block=from_block, to_block=to_block, initial_usd=1.0)
+    path = Path(out_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "block_number",
+        "block_timestamp",
+        "log_index",
+        "liquidity_index",
+        "wealth_of_1",
+        "cumulative_return",
+        "annualized_realized",
+        "from_block",
+        "base_liquidity_index",
+    ]
+    with path.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in iter_wealth_curve_csv_rows(points):
+            writer.writerow(row)
+    click.echo(json.dumps({"rows": len(points), "out": str(path), "from_block": from_block}))
+
+
+@main.command("compare-sofr")
+@click.option("--benchmark", "benchmark_path", required=True, type=click.Path(exists=True),
+              help="CSV with date,rate columns (SOFR or similar)")
+@click.option("--from", "from_block", default=None, type=int)
+@click.option("--to", "to_block", default=None, type=int)
+@click.option("--rate-is-percent", is_flag=True, help="Treat rate column as percent (5.32 not 0.0532)")
+@click.option("--config", "config_path", default=None, type=click.Path(exists=True))
+@click.option("--db", "db_path", default=None, type=click.Path())
+@click.option("--json", "as_json", is_flag=True)
+def cmd_compare_sofr(
+    benchmark_path: str,
+    from_block: int | None,
+    to_block: int | None,
+    rate_is_percent: bool,
+    config_path: str | None,
+    db_path: str | None,
+    as_json: bool,
+) -> None:
+    """Thin scaffolding: compare annualized realized vs imported SOFR/benchmark CSV."""
+    cfg = _cfg(config_path)
+    store = RateStore(db_path or cfg.db_path)
+    updates = store.all_updates_ordered(chain_id=cfg.chain_id, reserve=cfg.usdc_address)
+    if not updates:
+        click.echo("error: no rate_updates; run `yield backfill` first", err=True)
+        sys.exit(2)
+
+    start = resolve_start_block(cfg, store)
+    if from_block is None:
+        from_block = start if start is not None else int(updates[0]["block_number"])
+    if to_block is None:
+        to_block = int(updates[-1]["block_number"])
+
+    try:
+        realized = realized_between(updates, from_block=from_block, to_block=to_block)
+    except RealizedYieldError as e:
+        click.echo(f"error: {e}", err=True)
+        sys.exit(2)
+
+    points = load_benchmark_csv(
+        benchmark_path, rate_is_percent=rate_is_percent
+    )
+    result = compare_realized_to_benchmark(realized, points)
+    if as_json:
+        click.echo(json.dumps(result, indent=2))
+    else:
+        click.echo(json.dumps(result, indent=2))
 
 
 @main.command("follow")

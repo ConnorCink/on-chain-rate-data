@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "aave-usdc-yield"
 version = "0.1.0"
-description = "Aave V3 Ethereum USDC instantaneous supply yield from ReserveDataUpdated events"
+description = "Aave V3 Ethereum USDC instantaneous + realized supply yield from ReserveDataUpdated events"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"

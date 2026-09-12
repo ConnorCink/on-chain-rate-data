@@ -1,8 +1,8 @@
 # aave-usdc-yield
 
-Open-source Python tool for **instantaneous Aave V3 Core (Ethereum) USDC supply yield** at any historical block.
+Open-source Python tool for **instantaneous** and **realized** Aave V3 Core (Ethereum) USDC supply yield at any historical block.
 
-**Approach:** backfill `ReserveDataUpdated` logs (USDC-filtered) → sparse SQLite `rate_updates` → as-of join / local dense expand.  
+**Approach:** backfill `ReserveDataUpdated` logs (USDC-filtered) → sparse SQLite `rate_updates` (incl. `liquidityIndex`) → as-of join / dense expand / realized wealth curve.  
 **Not** per-block archive `eth_call` for history.
 
 ## Pins (Myshk)
@@ -44,10 +44,13 @@ pytest -q
 
 | Command | Phase | Description |
 |---------|-------|-------------|
-| `yield at --block N` | 1 | As-of point query |
-| `yield backfill` | 1 | Log backfill → SQLite |
+| `yield at --block N` | 1 | As-of point query (instantaneous) |
+| `yield backfill` | 1 | Log backfill → SQLite (small chunks, resume-safe) |
 | `yield discover-start` | 1 | Empirical start_block |
 | `yield materialize --from A --to B` | 1 logic / 2 polish | Local dense expand (no per-block RPC) |
+| `yield realized [--from] [--to]` | 1+ | Realized return via liquidityIndex ratio |
+| `yield wealth-curve --out CSV` | 1+ | Export $1 wealth curve CSV |
+| `yield compare-sofr --benchmark CSV` | scaffolding | Realized vs imported SOFR/benchmark |
 | `yield follow` | 2 stub | Tip follower |
 | `yield verify --blocks …` | 3 stub | Archive `getReserveData` checks |
 

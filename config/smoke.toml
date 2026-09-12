@@ -1,0 +1,9 @@
+# Smoke / query overlay — small eth_getLogs chunks for this RPC provider
+chain_id = 1
+protocol = "aave_v3"
+pool_address = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"
+usdc_address = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+start_block = 25955526
+rpc_env_key = "ETH_ARCHIVE_RPC_URL"
+log_chunk_size = 10
+db_path = "data/query.sqlite"

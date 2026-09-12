@@ -16,8 +16,8 @@ usdc_address = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
 # RPC: read only from this env var (never commit secrets)
 rpc_env_key = "ETH_ARCHIVE_RPC_URL"
 
-# eth_getLogs chunk size (providers often cap range)
-log_chunk_size = 10000
+# eth_getLogs chunk size — keep small (10–50); RPC auto-shrinks on 400s
+log_chunk_size = 50
 
 # SQLite path (relative to cwd or absolute)
 db_path = "data/yield.sqlite"

@@ -181,3 +181,29 @@ class RateStore:
                 (chain_id, reserve),
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def updates_through(
+        self, *, chain_id: int, reserve: str, to_block: int | None = None
+    ) -> list[dict[str, Any]]:
+        """Ordered updates up to to_block (inclusive), or all if to_block is None."""
+        with self.connection() as conn:
+            if to_block is None:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM rate_updates
+                    WHERE chain_id = ? AND lower(reserve) = lower(?)
+                    ORDER BY block_number ASC, log_index ASC
+                    """,
+                    (chain_id, reserve),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM rate_updates
+                    WHERE chain_id = ? AND lower(reserve) = lower(?)
+                      AND block_number <= ?
+                    ORDER BY block_number ASC, log_index ASC
+                    """,
+                    (chain_id, reserve, to_block),
+                ).fetchall()
+        return [dict(r) for r in rows]
