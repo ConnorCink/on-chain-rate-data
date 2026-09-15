@@ -9,6 +9,15 @@ Inlines ext-apps 2.0.0 app-with-deps from .vendor/ext-apps/.
 Host theme helpers; autoResize true; archive_query caches.
 
 
+
+## Panel build (Claude CSP)
+
+Claude Desktop MCP App iframes block `data:` script modules. `mcp_app/index.html` must inline the SDK + app as classic `<script>` (no `type=module`, no `data:` / esm.sh imports). Rebuild with:
+
+```bash
+python mcp_app/build_panel.py
+```
+
 ## Install
 
 pip install -e ".[mcp]" then run: python mcp_app/build_panel.py

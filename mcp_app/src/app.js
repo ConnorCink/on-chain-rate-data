@@ -73,10 +73,11 @@ function drawChart(canvas, points) {
     return pad.t + h - ((v - min) / span) * h;
   }
 
-  // fill
+  // fill — only append hex alpha when accent is #RRGGBB
   const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + h);
-  grad.addColorStop(0, accent + "55");
-  grad.addColorStop(1, accent + "00");
+  const hex6 = /^#[0-9a-fA-F]{6}$/.test(accent);
+  grad.addColorStop(0, hex6 ? accent + "55" : "rgba(31,107,74,0.33)");
+  grad.addColorStop(1, hex6 ? accent + "00" : "transparent");
   ctx.beginPath();
   points.forEach((p, i) => {
     const x = xAt(i);
@@ -110,7 +111,7 @@ function drawChart(canvas, points) {
   ctx.fillText((min * 100).toFixed(2) + "%", pad.l - 6, pad.t + h);
 }
 
-export function bootApp({ App, applyDocumentTheme, applyHostStyleVariables, applyHostFonts }) {
+function bootApp({ App, applyDocumentTheme, applyHostStyleVariables, applyHostFonts }) {
   const els = {
     apr: document.getElementById("apr"),
     apy: document.getElementById("apy"),

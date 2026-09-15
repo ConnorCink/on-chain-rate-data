@@ -2,16 +2,48 @@
 """Assemble mcp_app/index.html: panel CSS/JS + inlined @modelcontextprotocol/ext-apps app-with-deps.
 
 Produces a single HTML file suitable for MCP App resources (no vite required at runtime).
-Equivalent outcome to vite-plugin-singlefile when Node is unavailable.
+Uses classic <script> tags only — Claude Desktop MCP App iframes CSP-block data: module imports.
 """
 from __future__ import annotations
 
-import base64
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parent
 SDK = REPO / ".vendor" / "ext-apps" / "package" / "dist" / "src" / "app-with-deps.js"
+
+
+def rewrite_sdk_to_global(sdk: str) -> str:
+    """Turn trailing ESM export{local as name,...} into globalThis.ExtApps={name:local,...}.
+
+    Must use a function replacer: the minified bundle includes identifiers like $9,
+    which break string-template /$n/ backrefs in some engines.
+    """
+
+    def repl(m: re.Match[str]) -> str:
+        body = m.group(1)
+        parts: list[str] = []
+        for item in body.split(","):
+            item = item.strip()
+            if not item:
+                continue
+            if " as " in item:
+                local, export = item.split(" as ", 1)
+                parts.append(f"{export.strip()}:{local.strip()}")
+            else:
+                parts.append(item)
+        return "globalThis.ExtApps={" + ",".join(parts) + "};"
+
+    rewritten, n = re.subn(r"export\{([^}]*)\};?\s*$", repl, sdk, count=1)
+    if n != 1:
+        raise SystemExit(
+            "Could not rewrite trailing export{...} in vendored SDK "
+            f"(expected exactly one match, got {n})"
+        )
+    if "globalThis.ExtApps" not in rewritten:
+        raise SystemExit("SDK rewrite failed: globalThis.ExtApps missing")
+    return rewritten
 
 
 def build() -> Path:
@@ -22,9 +54,20 @@ def build() -> Path:
         )
     css = (ROOT / "src" / "panel.css").read_text(encoding="utf-8")
     app_js = (ROOT / "src" / "app.js").read_text(encoding="utf-8")
-    sdk = SDK.read_text(encoding="utf-8")
-    sdk_url = "data:text/javascript;base64," + base64.b64encode(sdk.encode()).decode()
-    app_url = "data:text/javascript;base64," + base64.b64encode(app_js.encode()).decode()
+    sdk = rewrite_sdk_to_global(SDK.read_text(encoding="utf-8"))
+
+    # Guard against accidental HTML script breakout in inlined sources.
+    for label, blob in (("SDK", sdk), ("app.js", app_js)):
+        if "</script>" in blob.lower():
+            raise SystemExit(f"{label} contains </script>; cannot safely inline")
+
+    boot_call = (
+        "bootApp({ App: ExtApps.App, "
+        "applyDocumentTheme: ExtApps.applyDocumentTheme, "
+        "applyHostStyleVariables: ExtApps.applyHostStyleVariables, "
+        "applyHostFonts: ExtApps.applyHostFonts });"
+    )
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -80,15 +123,12 @@ def build() -> Path:
       </p>
     </article>
   </div>
-  <script type="module">
-    import {{
-      App,
-      applyDocumentTheme,
-      applyHostStyleVariables,
-      applyHostFonts,
-    }} from "{sdk_url}";
-    import {{ bootApp }} from "{app_url}";
-    bootApp({{ App, applyDocumentTheme, applyHostStyleVariables, applyHostFonts }});
+  <script>
+{sdk}
+  </script>
+  <script>
+{app_js}
+{boot_call}
   </script>
 </body>
 </html>
